@@ -1,0 +1,82 @@
+select
+op.OR_PROC_ID AS EMR_PREF_CARD_ID,
+--op.PICKLIST_ID,
+--opk.CORE_PL_YN,
+replace(op2.proc_name,',','') AS EMR_PROCEDURE_NAME,
+SER2.PROV_NAME AS EMR_SURGEON,
+sup.SUPPLY_NAME AS EMR_ITEM_DESCRIPTION,
+--ops.SUPPLY_ID AS EMR_ITEM_NUMBER,
+ID.IDENTITY_ID AS ERP_ITEM_NUMBER,
+ops.NUM_NEEDED_OPEN AS EMR_OPEN_QTY,
+ops.NUM_SUPPLIES_PRN AS EMR_HOLD_QTY,
+case when op.INACTIVE_YN = 'Y' then 'N' when op.INACTIVE_YN = 'N' then 'Y' else 'Y' end AS EMR_ACTIVE_STATUS,
+--op.INACTIVE_YN,
+--sup.ACTIVE_YN AS EMR_ACTIVE_STATUS,
+Z.NAME AS EMR_PREF_CARD_SECTION,
+ops.SUPPLY_FREETXT_CMNT AS EMR_COMMENT,
+opk.INSTANT_OF_UPD_DTTM AS EMR_ITEM_CHANGED_DATE
+
+FROM OR_PROC op 
+inner join OR_PKLST opk on op.PICKLIST_ID = opk.PICK_LIST_ID
+inner join OR_PKLST_SUP_LIST ops on op.PICKLIST_ID = ops.PICK_LIST_ID
+inner join OR_SPLY sup on ops.SUPPLY_ID = sup.SUPPLY_ID
+left join clarity_ser ser on opk.surgeon_id = ser.prov_id
+LEFT JOIN ZC_OR_TYPE_OF_ITEM Z ON sup.TYPE_OF_ITEM_C = Z.TYPE_OF_ITEM_C
+--straight join - no pref cards without surgeon
+JOIN OR_PROC_MOD_SER_INDEX ind on op.OR_PROC_ID = ind.OR_PROC_ID and ind.LINE = 1
+JOIN CLARITY_SER SER2 ON ind.PMODS_SER_INDEX_ID = SER2.PROV_ID
+left join OR_PROC_MOD_ORP_INDEX ind on op.OR_PROC_ID = ind.OR_PROC_ID and ind.LINE = 1
+left join or_proc op2 on ind.PMODS_ORP_INDEX_ID = op2.OR_PROC_ID
+LEFT JOIN IDENTITY_SUP_ID ID ON ops.SUPPLY_ID = ID.SUPPLY_ID
+
+WHERE OP.REC_TYP_C = 1
+--and op.OR_PROC_ID = 'M-10019'  
+--AND op.INACTIVE_YN = 'N'  --inactive pref card
+--no pref cards without surgeon
+--and SER2.PROV_NAME is not null
+and ID.IDENTITY_ID is not null
+--order by ID.IDENTITY_ID
+
+UNION ALL
+
+--Core Picklist
+select
+op.OR_PROC_ID AS EMR_PREF_CARD_ID,
+--op.PICKLIST_ID,
+--core.CORE_PICKLIST_ID AS PICKLIST_ID,
+--opk.CORE_PL_YN,
+replace(op2.proc_name,',','') AS EMR_PROCEDURE_NAME,
+SER2.PROV_NAME AS EMR_SURGEON,
+sup.SUPPLY_NAME AS EMR_ITEM_DESCRIPTION,
+--ops.SUPPLY_ID AS EMR_ITEM_NUMBER,
+ID.IDENTITY_ID AS ERP_ITEM_NUMBER,
+ops.NUM_NEEDED_OPEN AS EMR_OPEN_QTY,
+ops.NUM_SUPPLIES_PRN AS EMR_HOLD_QTY,
+case when op.INACTIVE_YN = 'Y' then 'N' when op.INACTIVE_YN = 'N' then 'Y' else 'Y' end AS EMR_ACTIVE_STATUS,
+--op.INACTIVE_YN,
+--sup.ACTIVE_YN AS EMR_ACTIVE_STATUS,
+Z.NAME AS EMR_PREF_CARD_SECTION,
+ops.SUPPLY_FREETXT_CMNT AS EMR_COMMENT,
+opk.INSTANT_OF_UPD_DTTM AS EMR_ITEM_CHANGED_DATE
+
+FROM OR_PROC op 
+inner join OR_PKLST opk on op.PICKLIST_ID = opk.PICK_LIST_ID
+inner join OR_PKLST_CORE core on opk.PICK_LIST_ID = core.PICK_LIST_ID
+inner join OR_PKLST_SUP_LIST ops on core.CORE_PICKLIST_ID = ops.PICK_LIST_ID
+inner join OR_SPLY sup on ops.SUPPLY_ID = sup.SUPPLY_ID
+left join clarity_ser ser on opk.surgeon_id = ser.prov_id
+LEFT JOIN ZC_OR_TYPE_OF_ITEM Z ON sup.TYPE_OF_ITEM_C = Z.TYPE_OF_ITEM_C
+--straight join - no pref cards without surgeon
+JOIN OR_PROC_MOD_SER_INDEX ind on op.OR_PROC_ID = ind.OR_PROC_ID and ind.LINE = 1
+JOIN CLARITY_SER SER2 ON ind.PMODS_SER_INDEX_ID = SER2.PROV_ID
+left join OR_PROC_MOD_ORP_INDEX ind on op.OR_PROC_ID = ind.OR_PROC_ID and ind.LINE = 1
+left join or_proc op2 on ind.PMODS_ORP_INDEX_ID = op2.OR_PROC_ID
+LEFT JOIN IDENTITY_SUP_ID ID ON ops.SUPPLY_ID = ID.SUPPLY_ID
+
+WHERE OP.REC_TYP_C = 1
+and op.OR_PROC_ID = 'M10019'  -- 'M-15307'  
+--AND op.INACTIVE_YN = 'N'  --inactive pref card
+--no pref cards without surgeon
+--and SER2.PROV_NAME is not null
+and ID.IDENTITY_ID is not null
+--order by ID.IDENTITY_ID
