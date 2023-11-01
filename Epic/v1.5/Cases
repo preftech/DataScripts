@@ -1,0 +1,85 @@
+WITH cases AS
+(
+SELECT DISTINCT
+case when allp.MATCHED_PREF_ID is not null then allp.MATCHED_PREF_ID else allp.ALL_DEF_OR_PROC_ID end as emr_pref_card_id, 
+--RLOC.LOC_NAME AS emr_location,
+L.LOC_NAME AS emr_surgical_area,
+vs.LOG_ID AS emr_or_case_number,
+ORL.SURGERY_DATE AS emr_procedure_date,
+TO_CHAR(vs.SCHED_SURGERY_DATETIME,'HH24:MI:SS') AS emr_procedure_time,
+ser.PROV_NAME AS emr_primary_surgeon,
+orp.PROC_NAME AS emr_primary_procedure,
+ser2.PROV_NAME AS emr_secondary_surgeon,
+orp2.PROC_NAME as emr_secondary_procedure
+
+FROM V_SURGERY vs
+join V_LOG_SUPPLIES_IMPLANTS vsi on vs.LOG_ID = vsi.LOG_ID
+left JOIN OR_LOG_PREF_CARDS orlp on vs.LOG_ID = orlp.LOG_ID
+--LEFT JOIN OR_LOG_PREF_CARDS orlp on vs.LOG_ID = orlp.LOG_ID
+JOIN OR_LOG ORL ON vs.LOG_ID = ORL.LOG_ID
+--left outer join OR_PROC_LOC opl on op.OR_PROC_ID = opl.PROC_ID
+JOIN CLARITY_SER ser on vs.PNL_1_PRIM_SURG_ID = ser.PROV_ID
+JOIN OR_PROC orp on vs.PNL_1_PRIM_SURG_PROC_ID = orp.OR_PROC_ID
+LEFT JOIN or_log_all_proc allp on vs.LOG_ID = allp.LOG_ID and allp.LINE = 1
+LEFT JOIN or_log_all_proc allp2 on vs.LOG_ID = allp2.LOG_ID and allp2.LINE = 2
+LEFT JOIN or_proc orp2 on allp2.OR_PROC_ID = orp2.OR_PROC_ID
+LEFT JOIN CLARITY_LOC L ON vs.ACTUAL_LOC_ID = L.LOC_ID
+LEFT JOIN OR_LOC LOC ON ORL.LOC_ID = LOC.LOC_ID
+LEFT JOIN CLARITY_DEP DEP ON LOC.OR_DEPARTMENT_ID = DEP.DEPARTMENT_ID
+LEFT JOIN CLARITY_LOC RLOC ON DEP.REV_LOC_ID = RLOC.LOC_ID
+LEFT JOIN OR_LOG_ALL_SURG SEC ON ORL.LOG_ID = SEC.LOG_ID AND SEC.LINE = 2
+LEFT JOIN CLARITY_SER ser2 ON SEC.SURG_ID = ser2.PROV_ID
+
+LEFT JOIN or_proc orp3 on allp.MATCHED_PREF_ID = orp3.OR_PROC_ID
+
+--exclude PCs where no surgeon on card
+join OR_PROC_MOD_SER_INDEX ind on allp.MATCHED_PREF_ID = ind.OR_PROC_ID and ind.LINE = 1
+--left JOIN CLARITY_SER SER3 ON ind.PMODS_SER_INDEX_ID = SER2.PROV_ID
+
+join (select pk.LOG_ID, sup.SUPPLY_ID, sup.SUPPLY_INV_LOC_ID, sup.SUP_UNIT_COST, sup.RSN_SUP_WASTED_C, sup.CHARGEABLE_YN,
+        sum(NUM_NEEDED_OPEN) AS NUM_NEEDED_OPEN, SUM(NUM_SUPPLIES_PRN) AS NUM_SUPPLIES_PRN
+      FROM OR_PKLST pk 
+      join OR_PKLST_SUP_LIST sup ON pk.PICK_LIST_ID = sup.PICK_LIST_ID
+      AND (sup.IMPLANT_YN IS NULL OR sup.IMPLANT_YN = 'N')
+      AND (SUPPLIES_USED>0 or sup.SUPPLIES_WASTED>0)
+      AND pk.LOG_ID is not null
+	WHERE (pk.PICK_LIST_TYPE_C is null or pk.PICK_LIST_TYPE_C<>99)  --exclude depletion pick lists
+		and (pk.DELETED_YN is null or pk.DELETED_YN='N')  --exclude deleted pick lists
+      GROUP BY pk.LOG_ID, sup.SUPPLY_ID, sup.SUPPLY_INV_LOC_ID, sup.SUP_UNIT_COST, sup.RSN_SUP_WASTED_C, sup.CHARGEABLE_YN) supcount on vs.LOG_ID = supcount.LOG_ID AND vsi.ITEM_ID = supcount.SUPPLY_ID
+JOIN OR_SPLY sply on supcount.SUPPLY_ID = sply.SUPPLY_ID
+
+WHERE vs.SCHED_SURGERY_DATETIME between to_date( '01-may-2022 00:00:00', 'dd-mon-yyyy hh24:mi:ss' )
+and to_date( '31-oct-2022 23:59:59', 'dd-mon-yyyy hh24:mi:ss' )
+and vs.LOG_STATUS_C in (2,5)
+and (allp.MATCHED_PREF_ID is not null and allp.ALL_DEF_OR_PROC_ID is not null)
+AND orp3.REC_TYP_C = 1  --Preference Card
+--and allp.MATCHED_PREF_ID like 'M-%'
+--order by vs.LOG_ID
+)
+select * from cases
+
+--check to make sure cases have PC IDs that are in pref card summary (below is query from prefcardsummary)
+/*
+SELECT DISTINCT c.*
+--, L.LOC_NAME AS EMR_SURGICAL_AREA, SER.PROV_NAME AS EMR_SURGEON, --, EAP.PROC_NAME,
+--PROCNAME.PROC_NAME AS EMR_PROCEDURE_NAME, OP.INACTIVE_YN AS EMR_PREF_CARD_ACTIVE, SVC.NAME AS EMR_SERVICE_LINE--, PROCNAME.PROC_NAME
+FROM cases c 
+JOIN OR_PROC OP ON c.EMR_PREF_CARD_ID = OP.OR_PROC_ID
+JOIN OR_PROC_MOD_SER_INDEX SI ON OP.OR_PROC_ID = SI.OR_PROC_ID
+JOIN CLARITY_SER SER ON SI.PMODS_SER_INDEX_ID = SER.PROV_ID
+JOIN OR_PROC_MOD_ORP_INDEX ORP ON OP.OR_PROC_ID = ORP.OR_PROC_ID
+JOIN OR_PROC PROCNAME ON ORP.PMODS_ORP_INDEX_ID = PROCNAME.OR_PROC_ID
+LEFT JOIN OR_PROC_MOD_EAF_INDEX LI ON OP.OR_PROC_ID = LI.OR_PROC_ID
+LEFT JOIN CLARITY_LOC L ON LI.PMODS_EAF_INDEX_ID = L.LOC_ID
+LEFT JOIN OR_PROC_MOD_SVC_INDEX SVI ON OP.OR_PROC_ID = SVI.OR_PROC_ID
+LEFT JOIN ZC_OR_SERVICE SVC ON SVI.PMODS_SVC_INDEX_C = SVC.SERVICE_C
+
+inner join OR_PKLST opk on op.PICKLIST_ID = opk.PICK_LIST_ID
+inner join OR_PKLST_SUP_LIST ops on op.PICKLIST_ID = ops.PICK_LIST_ID
+inner join OR_SPLY sup on ops.SUPPLY_ID = sup.SUPPLY_ID
+
+LEFT JOIN IDENTITY_SUP_ID ID ON ops.SUPPLY_ID = ID.SUPPLY_ID
+
+WHERE OP.REC_TYP_C = 1
+and ID.IDENTITY_ID is not null
+*/
